@@ -4,7 +4,7 @@
   "bundle_id": "com.various.browser",
   "version": "1.0.0",
   "build_number": "1",
-  "minimum_ios": "15.0",
+  "minimum_ios": "16.0",
   "orientation": "all",
 
   "architectures": ["arm64"],
