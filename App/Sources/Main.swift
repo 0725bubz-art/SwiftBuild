@@ -136,6 +136,12 @@ private final class BrowserTab: NSObject, ObservableObject, Identifiable {
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent = kFirefoxUA
         wv.allowsBackForwardNavigationGestures = true
+
+        // KEY FIX: tell WKWebView to extend under safe areas
+        // so the web content fills edge to edge
+        wv.scrollView.contentInsetAdjustmentBehavior = .never
+        wv.scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+
         self.webView = wv
 
         super.init()
@@ -271,8 +277,6 @@ private final class BrowserViewModel: ObservableObject {
         addNewTab()
     }
 
-    // Tabs ───────────────────────────────────────────────────────────────────
-
     func addNewTab(url: URL? = nil) {
         let tab = BrowserTab()
         tabs.append(tab)
@@ -299,8 +303,6 @@ private final class BrowserViewModel: ObservableObject {
         showTabs     = false
     }
 
-    // Navigation ─────────────────────────────────────────────────────────────
-
     func navigate(to raw: String) {
         let url    = resolveURL(raw)
         urlBarText = url.absoluteString
@@ -311,8 +313,6 @@ private final class BrowserViewModel: ObservableObject {
     func goForward() { currentTab?.webView.goForward() }
     func reload()    { currentTab?.webView.reload() }
     func stop()      { currentTab?.webView.stopLoading() }
-
-    // Bookmarks ──────────────────────────────────────────────────────────────
 
     private var bookmarksFile: URL {
         FileManager.default
@@ -349,6 +349,7 @@ private final class BrowserViewModel: ObservableObject {
 }
 
 // MARK: - WebView UIViewRepresentable
+// ignoresSafeArea on the wrapper so it truly goes edge to edge
 
 private struct WebViewWrapper: UIViewRepresentable {
     let webView: WKWebView
@@ -356,14 +357,11 @@ private struct WebViewWrapper: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-// MARK: - Sheet Wrapper (iOS 15 compatible — no presentationDetents)
-// We use a full-screen sheet on iOS 15 and detents on iOS 16+
-// by wrapping in a helper view modifier.
+// MARK: - Sheet Helpers (iOS 15 + 16 compatible)
 
 private struct AdaptiveSheet<SheetContent: View>: ViewModifier {
     @Binding var isPresented: Bool
     let sheetContent: () -> SheetContent
-
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
             if #available(iOS 16.0, *) {
@@ -380,7 +378,6 @@ private struct AdaptiveSheet<SheetContent: View>: ViewModifier {
 private struct AdaptiveHalfSheet<SheetContent: View>: ViewModifier {
     @Binding var isPresented: Bool
     let sheetContent: () -> SheetContent
-
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
             if #available(iOS 16.0, *) {
@@ -426,6 +423,8 @@ private struct StartPageView: View {
                 Spacer()
                 Spacer()
             }
+            // push content up so it clears the bottom toolbar
+            .padding(.bottom, 0)
         }
     }
 
@@ -645,7 +644,6 @@ private struct BookmarksView: View {
                     }
                     Spacer()
                 } else {
-                    // iOS 15 compatible list — no scrollContentBackground
                     List {
                         ForEach(vm.bookmarks) { bm in
                             Button {
@@ -669,7 +667,6 @@ private struct BookmarksView: View {
                         .onDelete(perform: vm.removeBookmarks)
                     }
                     .listStyle(.plain)
-                    // scrollContentBackground only on iOS 16+
                     .background(C.bgDeep)
                 }
             }
@@ -739,19 +736,19 @@ private struct MenuView: View {
 
     private var menuItems: some View {
         VStack(spacing: 0) {
-            mRow("bookmark", "Bookmarks") {
+            mRow("bookmark",         "Bookmarks") {
                 showMenu = false; vm.showBookmarks = true
             }
             mRow("square.on.square", "Tabs") {
                 showMenu = false; vm.showTabs = true
             }
-            mRow("plus.square", "New Tab") {
+            mRow("plus.square",      "New Tab") {
                 showMenu = false; vm.addNewTab()
             }
-            mRow("bookmark.fill", "Bookmark This Page") {
+            mRow("bookmark.fill",    "Bookmark This Page") {
                 showMenu = false; vm.bookmarkCurrentPage()
             }
-            mRow("arrow.clockwise", "Reload Page") {
+            mRow("arrow.clockwise",  "Reload Page") {
                 showMenu = false; vm.reload()
             }
         }
@@ -808,66 +805,61 @@ private struct BottomToolbar: View {
     @Binding var showMenu         : Bool
     @Binding var bookmarkFlash    : Bool
 
+    // We read the safe area bottom inset so the toolbar
+    // sits above the home indicator correctly
     var body: some View {
         VStack(spacing: 0) {
             Divider().background(Color(white: 0.05))
             navRow
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
             actionRow
+                .padding(.bottom, 6)
+            // Safe area bottom spacer — fills the gap above the home bar
+            Color(red: 0.102, green: 0.102, blue: 0.102)
+                .frame(height: 0)
         }
         .background(C.bg)
+        // Extend the toolbar background colour into the
+        // safe area so there is no white/black gap at bottom
+        .edgesIgnoringSafeArea(.bottom)
     }
 
-    // Row 1 — nav + URL bar ──────────────────────────────────────────────────
+    // Row 1 ──────────────────────────────────────────────────────────────────
 
     private var navRow: some View {
         HStack(spacing: 10) {
-            // Back
-            Button { vm.goBack() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(
-                        vm.currentTab?.canGoBack == true
-                            ? C.accent : C.textFaint)
-                    .frame(width: 30)
-            }
-            .disabled(vm.currentTab?.canGoBack != true)
-
-            // Forward
-            Button { vm.goForward() } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(
-                        vm.currentTab?.canGoFwd == true
-                            ? C.accent : C.textFaint)
-                    .frame(width: 30)
-            }
-            .disabled(vm.currentTab?.canGoFwd != true)
-
-            // URL bar
+            backBtn
+            fwdBtn
             urlBarView
-
-            // Tab count
-            Button { vm.showTabs = true } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(C.textSec, lineWidth: 1.5)
-                        .frame(width: 24, height: 24)
-                    Text("\(vm.tabs.count)")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(C.accent)
-                }
-            }
-
-            // Menu
-            Button { showMenu = true } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(C.textSec)
-            }
+            tabCountBtn
+            menuBtn
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+    }
+
+    private var backBtn: some View {
+        Button { vm.goBack() } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(
+                    vm.currentTab?.canGoBack == true
+                        ? C.accent : C.textFaint)
+                .frame(width: 30)
+        }
+        .disabled(vm.currentTab?.canGoBack != true)
+    }
+
+    private var fwdBtn: some View {
+        Button { vm.goForward() } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(
+                    vm.currentTab?.canGoFwd == true
+                        ? C.accent : C.textFaint)
+                .frame(width: 30)
+        }
+        .disabled(vm.currentTab?.canGoFwd != true)
     }
 
     private var urlBarView: some View {
@@ -930,7 +922,28 @@ private struct BottomToolbar: View {
         }
     }
 
-    // Row 2 — bookmark + share ───────────────────────────────────────────────
+    private var tabCountBtn: some View {
+        Button { vm.showTabs = true } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(C.textSec, lineWidth: 1.5)
+                    .frame(width: 24, height: 24)
+                Text("\(vm.tabs.count)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(C.accent)
+            }
+        }
+    }
+
+    private var menuBtn: some View {
+        Button { showMenu = true } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(C.textSec)
+        }
+    }
+
+    // Row 2 ──────────────────────────────────────────────────────────────────
 
     private var actionRow: some View {
         HStack {
@@ -956,7 +969,7 @@ private struct BottomToolbar: View {
             }
             Spacer()
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
     }
 
     // Helpers ────────────────────────────────────────────────────────────────
@@ -994,20 +1007,37 @@ private struct BrowserView: View {
     @State private var bookmarkFlash = false
 
     var body: some View {
-        ZStack {
-            C.bg.ignoresSafeArea()
-            VStack(spacing: 0) {
-                progressBar
-                webArea
-                BottomToolbar(
-                    vm            : vm,
-                    editingURL    : $editingURL,
-                    urlInput      : $urlInput,
-                    showMenu      : $showMenu,
-                    bookmarkFlash : $bookmarkFlash
-                )
+        // ignoresSafeArea on the outermost container so the app
+        // truly fills the entire screen including notch and home bar areas.
+        // Each sub-view then adds back padding where needed.
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                C.bg.ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    // Top safe area fill — matches the toolbar colour
+                    // so there is no gap behind the notch/Dynamic Island
+                    C.bg
+                        .frame(height: geo.safeAreaInsets.top)
+                        .frame(maxWidth: .infinity)
+
+                    progressBar
+
+                    webArea
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    BottomToolbar(
+                        vm            : vm,
+                        editingURL    : $editingURL,
+                        urlInput      : $urlInput,
+                        showMenu      : $showMenu,
+                        bookmarkFlash : $bookmarkFlash
+                    )
+                }
             }
+            .ignoresSafeArea()
         }
+        .ignoresSafeArea()
         .adaptiveSheet(isPresented: $vm.showTabs) {
             TabSwitcherView(vm: vm)
         }
@@ -1045,6 +1075,7 @@ private struct BrowserView: View {
                 StartPageView(vm: vm)
             } else {
                 WebViewWrapper(webView: tab.webView)
+                    .ignoresSafeArea()
             }
         } else {
             StartPageView(vm: vm)
