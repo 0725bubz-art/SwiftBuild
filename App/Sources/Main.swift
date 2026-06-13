@@ -3,10 +3,10 @@ import WebKit
 
 // MARK: - Constants
 
-private let kAppName   = "Various"
-private let kHomeURL   = "https://duckduckgo.com/"
-private let kDDGSearch = "https://duckduckgo.com/?q="
-private let kFirefoxUA = "Mozilla/5.0 (Windows NT 10.0; rv:115.0) Gecko/20100101 Firefox/115.0"
+private let kAppName    = "Various"
+private let kHomeURL    = "https://duckduckgo.com/"
+private let kDDGSearch  = "https://duckduckgo.com/?q="
+private let kFirefoxUA  = "Mozilla/5.0 (Windows NT 10.0; rv:115.0) Gecko/20100101 Firefox/115.0"
 private let kAcceptLang = "en-US,en;q=0.5"
 
 private let kBlockedHosts: [String] = [
@@ -39,7 +39,9 @@ private let kSpoofScript = """
 (function(){
   try {
     var d=Object.defineProperty;
-    d(navigator,'userAgent',{get:function(){return 'Mozilla/5.0 (Windows NT 10.0; rv:115.0) Gecko/20100101 Firefox/115.0';}});
+    d(navigator,'userAgent',{get:function(){
+      return 'Mozilla/5.0 (Windows NT 10.0; rv:115.0) Gecko/20100101 Firefox/115.0';
+    }});
     d(navigator,'appVersion',{get:function(){return '5.0 (Windows)';}});
     d(navigator,'platform',{get:function(){return 'Win32';}});
     d(navigator,'language',{get:function(){return 'en-US';}});
@@ -66,17 +68,34 @@ private func resolveURL(_ raw: String) -> URL {
        text.range(of: pat, options: .regularExpression) != nil {
         return URL(string: "https://\(text)") ?? URL(string: kHomeURL)!
     }
-    let enc = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+    let enc = text.addingPercentEncoding(
+        withAllowedCharacters: .urlQueryAllowed) ?? text
     return URL(string: "\(kDDGSearch)\(enc)") ?? URL(string: kHomeURL)!
 }
 
 // MARK: - Bookmark Model
 
 private struct Bookmark: Identifiable, Codable {
-    var id    = UUID()
-    var title : String
-    var url   : String
-    var folder: String = "Bookmarks"
+    var id     = UUID()
+    var title  : String
+    var url    : String
+    var folder : String = "Bookmarks"
+}
+
+// MARK: - Colours
+
+private enum C {
+    static let bg        = Color(red: 0.102, green: 0.102, blue: 0.102)
+    static let bgDeep    = Color(red: 0.067, green: 0.067, blue: 0.067)
+    static let bgCard    = Color(red: 0.141, green: 0.141, blue: 0.141)
+    static let border    = Color(white: 0.165)
+    static let borderHi  = Color(white: 0.267)
+    static let textPri   = Color(white: 0.88)
+    static let textSec   = Color(white: 0.53)
+    static let textDim   = Color(white: 0.33)
+    static let textFaint = Color(white: 0.20)
+    static let accent    = Color(white: 0.67)
+    static let divider   = Color(white: 0.133)
 }
 
 // MARK: - BrowserTab
@@ -84,7 +103,6 @@ private struct Bookmark: Identifiable, Codable {
 private final class BrowserTab: NSObject, ObservableObject, Identifiable {
 
     let id = UUID()
-
     @Published var title       = "New Tab"
     @Published var urlString   = ""
     @Published var isLoading   = false
@@ -131,15 +149,17 @@ private final class BrowserTab: NSObject, ObservableObject, Identifiable {
         }
         obsTitle = wv.observe(\.title, options: [.new]) {
             [weak self] w, _ in
-            DispatchQueue.main.async { self?.title = w.title ?? "New Tab" }
+            DispatchQueue.main.async {
+                if let t = w.title, !t.isEmpty { self?.title = t }
+            }
         }
         obsURL = wv.observe(\.url, options: [.new]) {
             [weak self] w, _ in
             DispatchQueue.main.async {
                 let s = w.url?.absoluteString ?? ""
-                self?.urlString   = (s == "about:blank") ? "" : s
-                self?.canGoBack   = w.canGoBack
-                self?.canGoFwd    = w.canGoForward
+                self?.urlString = (s == "about:blank") ? "" : s
+                self?.canGoBack = w.canGoBack
+                self?.canGoFwd  = w.canGoForward
             }
         }
         obsLoading = wv.observe(\.isLoading, options: [.new]) {
@@ -161,7 +181,7 @@ private final class BrowserTab: NSObject, ObservableObject, Identifiable {
         req.setValue(
             "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             forHTTPHeaderField: "Accept")
-        req.setValue(kAcceptLang,        forHTTPHeaderField: "Accept-Language")
+        req.setValue(kAcceptLang,         forHTTPHeaderField: "Accept-Language")
         req.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
         webView.load(req)
     }
@@ -187,7 +207,8 @@ extension BrowserTab: WKNavigationDelegate {
         decisionHandler(.allow)
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
+    func webView(_ webView: WKWebView,
+                 didStartProvisionalNavigation _: WKNavigation!) {
         DispatchQueue.main.async {
             self.isLoading = true
             self.progress  = 0.05
@@ -197,19 +218,22 @@ extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
         DispatchQueue.main.async {
             self.isLoading = false
-            self.title     = webView.title?.isEmpty == false ? webView.title! : "Untitled"
+            self.title     = webView.title?.isEmpty == false
+                             ? webView.title! : "Untitled"
             self.urlString = webView.url?.absoluteString ?? ""
             self.canGoBack = webView.canGoBack
             self.canGoFwd  = webView.canGoForward
         }
     }
 
-    func webView(_ webView: WKWebView, didFail _: WKNavigation!, withError _: Error) {
+    func webView(_ webView: WKWebView,
+                 didFail _: WKNavigation!, withError _: Error) {
         DispatchQueue.main.async { self.isLoading = false }
     }
 
     func webView(_ webView: WKWebView,
-                 didFailProvisionalNavigation _: WKNavigation!, withError _: Error) {
+                 didFailProvisionalNavigation _: WKNavigation!,
+                 withError _: Error) {
         DispatchQueue.main.async { self.isLoading = false }
     }
 }
@@ -231,12 +255,12 @@ extension BrowserTab: WKUIDelegate {
 // MARK: - BrowserViewModel
 
 private final class BrowserViewModel: ObservableObject {
-    @Published var tabs          : [BrowserTab] = []
-    @Published var currentIndex  : Int          = 0
-    @Published var bookmarks     : [Bookmark]   = []
-    @Published var urlBarText    : String       = ""
-    @Published var showBookmarks : Bool         = false
-    @Published var showTabs      : Bool         = false
+    @Published var tabs         : [BrowserTab] = []
+    @Published var currentIndex : Int          = 0
+    @Published var bookmarks    : [Bookmark]   = []
+    @Published var urlBarText   : String       = ""
+    @Published var showBookmarks: Bool         = false
+    @Published var showTabs     : Bool         = false
 
     var currentTab: BrowserTab? {
         tabs.indices.contains(currentIndex) ? tabs[currentIndex] : nil
@@ -247,7 +271,7 @@ private final class BrowserViewModel: ObservableObject {
         addNewTab()
     }
 
-    // MARK: Tabs
+    // Tabs ───────────────────────────────────────────────────────────────────
 
     func addNewTab(url: URL? = nil) {
         let tab = BrowserTab()
@@ -275,11 +299,7 @@ private final class BrowserViewModel: ObservableObject {
         showTabs     = false
     }
 
-    func syncURLBar() {
-        urlBarText = currentTab?.urlString ?? ""
-    }
-
-    // MARK: Navigation
+    // Navigation ─────────────────────────────────────────────────────────────
 
     func navigate(to raw: String) {
         let url    = resolveURL(raw)
@@ -292,7 +312,7 @@ private final class BrowserViewModel: ObservableObject {
     func reload()    { currentTab?.webView.reload() }
     func stop()      { currentTab?.webView.stopLoading() }
 
-    // MARK: Bookmarks
+    // Bookmarks ──────────────────────────────────────────────────────────────
 
     private var bookmarksFile: URL {
         FileManager.default
@@ -328,7 +348,7 @@ private final class BrowserViewModel: ObservableObject {
     }
 }
 
-// MARK: - WebView Wrapper
+// MARK: - WebView UIViewRepresentable
 
 private struct WebViewWrapper: UIViewRepresentable {
     let webView: WKWebView
@@ -336,20 +356,58 @@ private struct WebViewWrapper: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
-// MARK: - Colours (no extension, no hex parsing)
+// MARK: - Sheet Wrapper (iOS 15 compatible — no presentationDetents)
+// We use a full-screen sheet on iOS 15 and detents on iOS 16+
+// by wrapping in a helper view modifier.
 
-private enum C {
-    static let bg        = Color(red: 0.102, green: 0.102, blue: 0.102)
-    static let bgDeep    = Color(red: 0.067, green: 0.067, blue: 0.067)
-    static let bgCard    = Color(red: 0.141, green: 0.141, blue: 0.141)
-    static let border    = Color(white: 0.165)
-    static let borderHi  = Color(white: 0.267)
-    static let textPri   = Color(white: 0.88)
-    static let textSec   = Color(white: 0.53)
-    static let textDim   = Color(white: 0.33)
-    static let textFaint = Color(white: 0.20)
-    static let accent    = Color(white: 0.67)
-    static let divider   = Color(white: 0.133)
+private struct AdaptiveSheet<SheetContent: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let sheetContent: () -> SheetContent
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
+            if #available(iOS 16.0, *) {
+                sheetContent()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            } else {
+                sheetContent()
+            }
+        }
+    }
+}
+
+private struct AdaptiveHalfSheet<SheetContent: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let sheetContent: () -> SheetContent
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
+            if #available(iOS 16.0, *) {
+                sheetContent()
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            } else {
+                sheetContent()
+            }
+        }
+    }
+}
+
+extension View {
+    fileprivate func adaptiveSheet<C: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> C
+    ) -> some View {
+        modifier(AdaptiveSheet(isPresented: isPresented, sheetContent: content))
+    }
+
+    fileprivate func adaptiveHalfSheet<C: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> C
+    ) -> some View {
+        modifier(AdaptiveHalfSheet(isPresented: isPresented, sheetContent: content))
+    }
 }
 
 // MARK: - Start Page
@@ -363,21 +421,29 @@ private struct StartPageView: View {
             C.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 Spacer()
-                logo
-                searchBox
+                logoSection
+                searchSection
                 Spacer()
                 Spacer()
             }
         }
     }
 
-    private var logo: some View {
+    private var logoSection: some View {
         VStack(spacing: 0) {
             ZStack {
-                Circle().stroke(Color.white.opacity(0.27), lineWidth: 2).frame(width: 72, height: 72)
-                Circle().stroke(Color.white.opacity(0.33), lineWidth: 2).frame(width: 48, height: 48)
-                Circle().stroke(Color.white.opacity(0.40), lineWidth: 2).frame(width: 24, height: 24)
-                Circle().fill(Color.white.opacity(0.53)).frame(width: 8,  height: 8)
+                Circle()
+                    .stroke(Color.white.opacity(0.27), lineWidth: 2)
+                    .frame(width: 72, height: 72)
+                Circle()
+                    .stroke(Color.white.opacity(0.33), lineWidth: 2)
+                    .frame(width: 48, height: 48)
+                Circle()
+                    .stroke(Color.white.opacity(0.40), lineWidth: 2)
+                    .frame(width: 24, height: 24)
+                Circle()
+                    .fill(Color.white.opacity(0.53))
+                    .frame(width: 8, height: 8)
             }
             .opacity(0.75)
             .padding(.bottom, 20)
@@ -396,7 +462,7 @@ private struct StartPageView: View {
         }
     }
 
-    private var searchBox: some View {
+    private var searchSection: some View {
         HStack(spacing: 0) {
             ZStack(alignment: .leading) {
                 if query.isEmpty {
@@ -404,6 +470,7 @@ private struct StartPageView: View {
                         .foregroundColor(Color(white: 0.23))
                         .font(.system(size: 15))
                         .padding(.leading, 16)
+                        .allowsHitTesting(false)
                 }
                 TextField("", text: $query)
                     .foregroundColor(C.textPri)
@@ -433,7 +500,10 @@ private struct StartPageView: View {
         }
         .background(C.bgDeep)
         .cornerRadius(6)
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(C.border, lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(C.border, lineWidth: 1)
+        )
         .padding(.horizontal, 28)
     }
 
@@ -453,11 +523,14 @@ private struct TabSwitcherView: View {
         ZStack {
             C.bgDeep.ignoresSafeArea()
             VStack(spacing: 0) {
-                header
+                headerRow
                 Divider().background(C.border)
                 ScrollView {
                     LazyVStack(spacing: 10) {
-                        ForEach(Array(vm.tabs.enumerated()), id: \.element.id) { i, tab in
+                        ForEach(
+                            Array(vm.tabs.enumerated()),
+                            id: \.element.id
+                        ) { i, tab in
                             tabCard(index: i, tab: tab)
                         }
                     }
@@ -467,15 +540,13 @@ private struct TabSwitcherView: View {
         }
     }
 
-    private var header: some View {
+    private var headerRow: some View {
         HStack {
             Text("\(vm.tabs.count) Tab\(vm.tabs.count == 1 ? "" : "s")")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(C.textPri)
             Spacer()
-            Button {
-                vm.addNewTab()
-            } label: {
+            Button { vm.addNewTab() } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundColor(C.accent)
@@ -508,9 +579,7 @@ private struct TabSwitcherView: View {
             }
             Spacer()
 
-            Button {
-                vm.closeTab(at: index)
-            } label: {
+            Button { vm.closeTab(at: index) } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(C.textSec)
@@ -526,7 +595,8 @@ private struct TabSwitcherView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(
-                            index == vm.currentIndex ? C.borderHi : C.border,
+                            index == vm.currentIndex
+                                ? C.borderHi : C.border,
                             lineWidth: 1)
                 )
         )
@@ -575,6 +645,7 @@ private struct BookmarksView: View {
                     }
                     Spacer()
                 } else {
+                    // iOS 15 compatible list — no scrollContentBackground
                     List {
                         ForEach(vm.bookmarks) { bm in
                             Button {
@@ -598,7 +669,7 @@ private struct BookmarksView: View {
                         .onDelete(perform: vm.removeBookmarks)
                     }
                     .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
+                    // scrollContentBackground only on iOS 16+
                     .background(C.bgDeep)
                 }
             }
@@ -668,11 +739,21 @@ private struct MenuView: View {
 
     private var menuItems: some View {
         VStack(spacing: 0) {
-            mRow("bookmark",         "Bookmarks")       { showMenu=false; vm.showBookmarks=true }
-            mRow("square.on.square", "Tabs")             { showMenu=false; vm.showTabs=true }
-            mRow("plus.square",      "New Tab")          { showMenu=false; vm.addNewTab() }
-            mRow("bookmark.fill",    "Bookmark This Page") { showMenu=false; vm.bookmarkCurrentPage() }
-            mRow("arrow.clockwise",  "Reload Page")      { showMenu=false; vm.reload() }
+            mRow("bookmark", "Bookmarks") {
+                showMenu = false; vm.showBookmarks = true
+            }
+            mRow("square.on.square", "Tabs") {
+                showMenu = false; vm.showTabs = true
+            }
+            mRow("plus.square", "New Tab") {
+                showMenu = false; vm.addNewTab()
+            }
+            mRow("bookmark.fill", "Bookmark This Page") {
+                showMenu = false; vm.bookmarkCurrentPage()
+            }
+            mRow("arrow.clockwise", "Reload Page") {
+                showMenu = false; vm.reload()
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -721,11 +802,11 @@ private struct MenuView: View {
 // MARK: - Bottom Toolbar
 
 private struct BottomToolbar: View {
-    @ObservedObject var vm         : BrowserViewModel
-    @Binding var editingURL        : Bool
-    @Binding var urlInput          : String
-    @Binding var showMenu          : Bool
-    @Binding var bookmarkFlash     : Bool
+    @ObservedObject var vm        : BrowserViewModel
+    @Binding var editingURL       : Bool
+    @Binding var urlInput         : String
+    @Binding var showMenu         : Bool
+    @Binding var bookmarkFlash    : Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -736,42 +817,60 @@ private struct BottomToolbar: View {
         .background(C.bg)
     }
 
-    // Row 1 ──────────────────────────────────────────────────────────────────
+    // Row 1 — nav + URL bar ──────────────────────────────────────────────────
 
     private var navRow: some View {
         HStack(spacing: 10) {
-            backButton
-            fwdButton
-            urlBar
-            tabCountButton
-            menuButton
+            // Back
+            Button { vm.goBack() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(
+                        vm.currentTab?.canGoBack == true
+                            ? C.accent : C.textFaint)
+                    .frame(width: 30)
+            }
+            .disabled(vm.currentTab?.canGoBack != true)
+
+            // Forward
+            Button { vm.goForward() } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(
+                        vm.currentTab?.canGoFwd == true
+                            ? C.accent : C.textFaint)
+                    .frame(width: 30)
+            }
+            .disabled(vm.currentTab?.canGoFwd != true)
+
+            // URL bar
+            urlBarView
+
+            // Tab count
+            Button { vm.showTabs = true } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(C.textSec, lineWidth: 1.5)
+                        .frame(width: 24, height: 24)
+                    Text("\(vm.tabs.count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(C.accent)
+                }
+            }
+
+            // Menu
+            Button { showMenu = true } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(C.textSec)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
         .padding(.bottom, 6)
     }
 
-    private var backButton: some View {
-        Button { vm.goBack() } label: {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(vm.currentTab?.canGoBack == true ? C.accent : C.textFaint)
-                .frame(width: 30)
-        }
-        .disabled(vm.currentTab?.canGoBack != true)
-    }
-
-    private var fwdButton: some View {
-        Button { vm.goForward() } label: {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(vm.currentTab?.canGoFwd == true ? C.accent : C.textFaint)
-                .frame(width: 30)
-        }
-        .disabled(vm.currentTab?.canGoFwd != true)
-    }
-
-    private var urlBar: some View {
+    private var urlBarView: some View {
         HStack(spacing: 6) {
             if vm.urlBarText.hasPrefix("https://") {
                 Image(systemName: "lock.fill")
@@ -820,7 +919,9 @@ private struct BottomToolbar: View {
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(editingURL ? C.textSec : C.border, lineWidth: 1)
+                .stroke(
+                    editingURL ? C.textSec : C.border,
+                    lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -829,28 +930,7 @@ private struct BottomToolbar: View {
         }
     }
 
-    private var tabCountButton: some View {
-        Button { vm.showTabs = true } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(C.textSec, lineWidth: 1.5)
-                    .frame(width: 24, height: 24)
-                Text("\(vm.tabs.count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(C.accent)
-            }
-        }
-    }
-
-    private var menuButton: some View {
-        Button { showMenu = true } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundColor(C.textSec)
-        }
-    }
-
-    // Row 2 ──────────────────────────────────────────────────────────────────
+    // Row 2 — bookmark + share ───────────────────────────────────────────────
 
     private var actionRow: some View {
         HStack {
@@ -862,9 +942,11 @@ private struct BottomToolbar: View {
                     bookmarkFlash = false
                 }
             } label: {
-                Image(systemName: bookmarkFlash ? "bookmark.fill" : "bookmark")
+                Image(systemName: bookmarkFlash
+                      ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 19))
-                    .foregroundColor(bookmarkFlash ? C.textPri : C.textSec)
+                    .foregroundColor(
+                        bookmarkFlash ? C.textPri : C.textSec)
             }
             Spacer()
             Button { shareURL() } label: {
@@ -891,10 +973,13 @@ private struct BottomToolbar: View {
         guard !vm.urlBarText.isEmpty,
               let url = URL(string: vm.urlBarText) else { return }
         let av = UIActivityViewController(
-            activityItems: [url], applicationActivities: nil)
-        guard let scene = UIApplication.shared.connectedScenes.first
+            activityItems: [url],
+            applicationActivities: nil)
+        guard
+            let scene = UIApplication.shared.connectedScenes.first
                 as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
+            let root  = scene.windows.first?.rootViewController
+        else { return }
         root.present(av, animated: true)
     }
 }
@@ -923,20 +1008,14 @@ private struct BrowserView: View {
                 )
             }
         }
-        .sheet(isPresented: $vm.showTabs) {
+        .adaptiveSheet(isPresented: $vm.showTabs) {
             TabSwitcherView(vm: vm)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $vm.showBookmarks) {
+        .adaptiveSheet(isPresented: $vm.showBookmarks) {
             BookmarksView(vm: vm)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showMenu) {
+        .adaptiveHalfSheet(isPresented: $showMenu) {
             MenuView(vm: vm, showMenu: $showMenu)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -946,8 +1025,12 @@ private struct BrowserView: View {
             GeometryReader { geo in
                 Rectangle()
                     .fill(C.accent)
-                    .frame(width: geo.size.width * tab.progress, height: 2)
-                    .animation(.linear(duration: 0.15), value: tab.progress)
+                    .frame(
+                        width: geo.size.width * tab.progress,
+                        height: 2)
+                    .animation(
+                        .linear(duration: 0.15),
+                        value: tab.progress)
             }
             .frame(height: 2)
         } else {
