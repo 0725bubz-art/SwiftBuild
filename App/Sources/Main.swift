@@ -98,7 +98,8 @@ enum C {
     static let sdivider   = Color(white: 0.133)
 }
 // MARK: - BrowserTab
-final class BrowserTab: NSObject, Identifiable {
+final class BrowserTab: NSObject, Identifiable,
+                        WKNavigationDelegate, WKUIDelegate {
     let id = UUID()
     var title      = "New Tab"
     var urlString  = ""
