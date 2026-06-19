@@ -129,10 +129,6 @@ final class BrowserTab: NSObject, Identifiable {
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.customUserAgent = kFirefoxUA
         wv.allowsBackForwardNavigationGestures = true
-        // ✅ FIX: Changed from .never to .always so the web view
-        //    properly fills the entire screen including safe areas.
-        //    .never caused the web view to stay squished/small with
-        //    black bars around it because it ignored the screen bounds.
         wv.scrollView.contentInsetAdjustmentBehavior = .always
         wv.scrollView.automaticallyAdjustsScrollIndicatorInsets = true
         self.webView = wv
